@@ -21,7 +21,10 @@
 
 #include <QTimer>
 #include <QTime>
+
+#ifdef QGST_USE_QTGSTREAMER
 #include <QGst/Pipeline>
+#endif
 #include "videowidget.h"
 
 struct SourceSettings {
@@ -101,11 +104,17 @@ Q_SIGNALS:
 
 private:
     void setPipeline(const QGst::PipelinePtr & pipeline);
+#ifndef QGST_USE_QTGSTREAMER
+    static gboolean message_cb(GstBus * bus, GstMessage * message, gpointer user_data);
+#endif
     void onBusMessage(const QGst::MessagePtr & message);
-    void handlePipelineStateChange(const QGst::StateChangedMessagePtr & scm);
+    void handlePipelineStateChange(const QGst::State & oldState, const QGst::State & newState, const QGst::State & pendingState);
 
     QGst::PipelinePtr m_pipeline;
     QTimer m_positionTimer;
+#ifndef QGST_USE_QTGSTREAMER
+    gulong m_pipelineConnectId;
+#endif
 };
 
 #endif

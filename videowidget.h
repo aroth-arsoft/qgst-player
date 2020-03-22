@@ -19,12 +19,59 @@
 #ifndef VIDEOWIDGET_H
 #define VIDEOWIDGET_H
 
+#ifdef QGST_USE_QTGSTREAMER
 #include <QGst/Global>
 #include <QGst/Element>
+#else
+#include <gst/gst.h>
+#include <gst/video/videooverlay.h>
+#endif
 
 #include <QtWidgets/QWidget>
+#include <QTime>
 
 namespace QGst {
+
+typedef GstElement * ElementPtr;
+typedef GstPipeline * PipelinePtr;
+typedef GstMessage * MessagePtr;
+typedef MessagePtr StateChangedMessagePtr;
+typedef GstVideoOverlay* VideoOverlayPtr;
+
+enum State {
+    StateVoidPending = GST_STATE_VOID_PENDING,
+    StateNull = GST_STATE_NULL,
+    StateReady = GST_STATE_READY,
+    StatePaused = GST_STATE_PAUSED,
+    StatePlaying = GST_STATE_PLAYING
+};
+
+inline State get_current_state(GstElement * element)
+{
+    GstState curState, pendingState;
+    const GstClockTime timeout = 0;
+    GstStateChangeReturn result = gst_element_get_state(element,
+                                                        &curState, &pendingState, timeout);
+    Q_UNUSED(result);
+    return static_cast<State>(curState);
+}
+
+inline QTime GstClockTime_to_QTime(const GstClockTime & t)
+{
+    GstClockTime asSeconds = GST_TIME_AS_SECONDS(t);
+    GstClockTime h = (asSeconds / 3600) % 24;
+    GstClockTime min = (asSeconds / 60) % 60;
+    GstClockTime sec = asSeconds % 60;
+    GstClockTime msec = GST_TIME_AS_MSECONDS(t) % 1000;
+    return QTime(h, min, sec, msec);
+}
+
+inline GstClockTime GstClockTime_from_QTime(const QTime & time)
+{
+    return (time.hour()*3600*Q_UINT64_C(1000000000)) + (time.minute()*60*Q_UINT64_C(1000000000))
+           + (time.second()*Q_UINT64_C(1000000000)) + (time.msec()*Q_UINT64_C(1000000));
+}
+
 namespace Ui {
 
 class AbstractRenderer;
