@@ -5,6 +5,8 @@
 #include <QFileDialog>
 #include <QInputDialog>
 
+#include "OpenNetworkDialog.h"
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
       , ui(new Ui::MainWindow)
@@ -22,7 +24,7 @@ MainWindow::MainWindow(QWidget *parent)
         style()->standardIcon(QStyle::SP_MediaVolume).pixmap(QSize(32, 32),
                                                              QIcon::Normal, QIcon::On));
 
-    m_currentUrl = QLatin1String("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+    m_currentSource.uri = QLatin1String("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
 
 }
 
@@ -134,31 +136,34 @@ void MainWindow::onPositionChanged()
     }
 }
 
-void MainWindow::openUrl(const QString & s)
+void MainWindow::restartPlayer()
 {
-    m_currentUrl = s;
-
     ui->player->stop();
-    ui->player->setUri(m_currentUrl);
+    ui->player->setSource(m_currentSource);
     ui->player->play();
 }
 
-
 void MainWindow::openFile()
 {
-    QString fileName = QFileDialog::getOpenFileName(this, tr("Open a Movie"), m_currentUrl);
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Open a Movie"), m_currentSource.uri);
 
     if (!fileName.isEmpty()) {
-        openUrl(fileName);
+
+        m_currentSource.clear();
+        m_currentSource.setUri(fileName);
+
+        restartPlayer();
     }
 }
 
 void MainWindow::openNetwork()
 {
-    QString url = QInputDialog::getText(this, tr("Open a URL"), tr("URL"), QLineEdit::Normal, m_currentUrl);
-
-    if (!url.isEmpty()) {
-        openUrl(url);
+    OpenNetworkDialog dlg(this);
+    dlg.setSource(m_currentSource);
+    if(dlg.exec() == QDialog::Accepted)
+    {
+        m_currentSource = dlg.source();
+        restartPlayer();
     }
 }
 

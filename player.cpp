@@ -22,6 +22,7 @@
 #include <QGlib/Connect>
 #include <QGlib/Error>
 #include <QGst/Pipeline>
+#include <QGst/Parse>
 #include <QGst/ElementFactory>
 #include <QGst/Bus>
 #include <QGst/Message>
@@ -29,6 +30,91 @@
 #include <QGst/ClockTime>
 #include <QGst/Event>
 #include <QGst/StreamVolume>
+
+#include <QStandardPaths>
+
+QString getDemoDirectory()
+{
+    static QStringList locations = QStandardPaths::standardLocations(QStandardPaths::MoviesLocation);
+    return locations.front();
+}
+
+void SourceSettings::setUri(const QString & url)
+{
+    QString filename = url;
+    QUrl filenameAsUrl(filename);
+    QString filenameScheme = filenameAsUrl.scheme();
+    // handle filenames like "C:\me\too.mpv", which gets a scheme of "C"
+    if (filenameScheme.length() == 1)
+        filenameScheme.clear();
+    if (filenameAsUrl.host().isEmpty() && (filenameScheme.isEmpty() || filenameScheme.compare("file") == 0) && !filename.isEmpty())
+    {
+#ifndef _WIN32
+        // replace all backslash chars by slash so the cleanPath
+        // can do its magic
+        filename.replace(QChar('\\'), QChar('/'));
+#endif
+        // try media path
+        bool ok = QFile::exists(filename);
+        if (ok)
+            filename = QDir::cleanPath(QDir().absoluteFilePath(filename));
+        else
+            filename = QDir::cleanPath(QDir(getDemoDirectory()).absoluteFilePath(filename));
+        if(!filename.isEmpty() && filename.at(0) == '/')
+            uri = "file://" + filename;
+        else
+            uri = "file:///" + filename;
+        // make this URL completely legal without any windoof stuff
+        uri.replace(QChar('\\'), QChar('/'));
+        isLocalFile = true;
+        isRTSP = false;
+        isFTP = false;
+        isUDP = false;
+        noStreamingUriAvailable = false;
+    }
+    else
+    {
+        if (filenameScheme.compare("rtsp") == 0)
+            isRTSP = true;
+        else if (filenameScheme.compare("ftp") == 0)
+            isFTP = true;
+        else if (filenameScheme.compare("udp") == 0)
+            isUDP = true;
+
+        if(isRTSP || isFTP)
+        {
+            username = filenameAsUrl.userName();
+            password = filenameAsUrl.password();
+            uri = filenameAsUrl.toEncoded(QUrl::FullyEncoded | QUrl::RemoveUserInfo).constData();
+        }
+        else if(isUDP)
+        {
+            // drop any username/password
+            uri = filenameAsUrl.toEncoded(QUrl::FullyEncoded | QUrl::RemoveUserInfo).constData();
+        }
+        else
+            uri = url;
+        noStreamingUriAvailable = uri.isEmpty();
+    }
+}
+
+SourceSettings getSourceSettings(const QString & url, const QString & options)
+{
+    SourceSettings ret;
+    ret.bufferTime = 0;
+    ret.useAudio = false;
+    ret.isLocalFile = false;
+    ret.noStreamingUriAvailable = true;
+    ret.pauseMode = false;
+
+    QString uri = url;
+    ret.options = options;
+
+
+
+    return ret;
+}
+
 
 Player::Player(QWidget *parent)
     : QGst::Ui::VideoWidget(parent)
@@ -56,51 +142,11 @@ void Player::setUri(const QString & uri)
         realUri = QUrl::fromLocalFile(realUri).toEncoded();
     }
 
-    if (!m_pipeline) {
-        m_pipeline = QGst::ElementFactory::make("playbin").dynamicCast<QGst::Pipeline>();
-        if(m_pipeline)
-             m_pipeline->setProperty("uri", realUri);
-    }
-
-
-#if 0
-        QString scheme = realUri.mid(0, i);
-
-        if (scheme == "rtsp")
-        {
-            QGst::ElementPtr rtspsrc = QGst::ElementFactory::make("rtspsrc");
-            rtspsrc->setProperty("location", realUri);
-
-            QGst::ElementPtr queue = QGst::ElementFactory::make("queue");
-            QGst::ElementPtr decodebin = QGst::ElementFactory::make("decodebin");
-            QGst::ElementPtr autovideosink = QGst::ElementFactory::make("autovideosink");
-
-            QGst::PipelinePtr pipeline = QGst::Pipeline::create();
-            pipeline->add(rtspsrc);
-            pipeline->add(queue);
-            pipeline->add(decodebin);
-            pipeline->add(autovideosink);
-
-            m_pipeline = pipeline;
-        }
-#else
-
-		/* Build the pipeline */
-        //m_pipeline = QGst::Pipeline::parse(uri);
-#endif // endif
-
-        if (m_pipeline) {
-            //let the video widget watch the pipeline for new video sinks
-            watchPipeline(m_pipeline);
-
-            //watch the bus for messages
-            QGst::BusPtr bus = m_pipeline->bus();
-            bus->addSignalWatch();
-            QGlib::connect(bus, "message", this, &Player::onBusMessage);
-        } else {
-            qCritical() << "Failed to create the pipeline";
-        }
-
+    QGst::PipelinePtr pipeline;
+    pipeline = QGst::ElementFactory::make("playbin").dynamicCast<QGst::Pipeline>();
+    if(pipeline)
+         pipeline->setProperty("uri", realUri);
+    setPipeline(pipeline);
 }
 
 QTime Player::position() const
@@ -236,6 +282,66 @@ void Player::handlePipelineStateChange(const QGst::StateChangedMessagePtr & scm)
     }
 
     Q_EMIT stateChanged();
+}
+
+void Player::setPipeline(const QGst::PipelinePtr & pipeline)
+{
+    if(m_pipeline == pipeline)
+        return;
+
+    if (m_pipeline)
+    {
+        stopPipelineWatch();
+
+        QGst::BusPtr bus = m_pipeline->bus();
+        // disconnect from the current bus and pipeline
+        QGlib::disconnect(bus, "message", this, &Player::onBusMessage);
+        bus->removeSignalWatch();
+    }
+    if(pipeline)
+    {
+        //let the video widget watch the pipeline for new video sinks
+        watchPipeline(pipeline);
+
+        //watch the bus for messages
+        QGst::BusPtr bus = pipeline->bus();
+        bus->addSignalWatch();
+        QGlib::connect(bus, "message", this, &Player::onBusMessage);
+    }
+    m_pipeline = pipeline;
+}
+
+void Player::setSource(const SourceSettings & source)
+{
+    if(source.isRTSP)
+    {
+        std::stringstream ss;
+        ss << "rtspsrc location=" << source.uri.toStdString();
+        if(!source.username.isEmpty())
+            ss << " user-id=" << source.username.toStdString();
+        if(!source.password.isEmpty())
+            ss << " user-pw=" << source.password.toStdString();
+        if(source.bufferTime >= 0)
+            ss << " latency=" << source.bufferTime;
+
+        //ss << " onvif-mode=1";
+
+        ss << " ! queue ! decodebin ! autovideosink";
+        QGst::ElementPtr element = QGst::Parse::launch(ss.str().c_str());
+        QGst::PipelinePtr pipeline;
+        if(element)
+            pipeline = element.dynamicCast<QGst::Pipeline>();
+
+        setPipeline(pipeline);
+    }
+    else
+    {
+        QGst::PipelinePtr pipeline;
+        pipeline = QGst::ElementFactory::make("playbin").dynamicCast<QGst::Pipeline>();
+        if(pipeline)
+            pipeline->setProperty("uri", source.uri);
+        setPipeline(pipeline);
+    }
 }
 
 #include "moc_player.cpp"

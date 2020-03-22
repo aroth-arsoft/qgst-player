@@ -28,17 +28,8 @@ find_package(Qt5 COMPONENTS Widgets OpenGL REQUIRED)
 
 find_package(Qt5GStreamer)
 include_directories(${QTGSTREAMER_INCLUDE_DIR})
-if(ANDROID)
-  add_library(qgst SHARED
-    main.cpp
-    player.cpp
-    player.h
-    MainWindow.cpp
-    MainWindow.h
-    MainWindow.ui
-  )
-else()
-  add_executable(qgst
+
+add_executable(qgst
     main.cpp
     player.cpp
     player.h
@@ -47,7 +38,9 @@ else()
     MainWindow.cpp
     MainWindow.h
     MainWindow.ui
+    OpenNetworkDialog.cpp
+    OpenNetworkDialog.h
+    OpenNetworkDialog.ui
   )
-endif()
 
 target_link_libraries(qgst PRIVATE Qt5::Widgets Qt5::OpenGL Qt5GStreamer Qt5GStreamerUi )

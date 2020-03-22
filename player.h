@@ -24,6 +24,53 @@
 #include <QGst/Pipeline>
 #include "videowidget.h"
 
+struct SourceSettings {
+    SourceSettings()
+        : uri()
+          , options()
+          , bufferTime(0)
+          , useAudio(false)
+          , pauseMode(false)
+          , isLocalFile(false)
+          , isRTSP(false)
+          , isFTP(false)
+          , isUDP(false)
+          , noStreamingUriAvailable(false)
+          , lowLatency(false)
+    {
+    }
+    void setUri(const QString & s);
+    void clear()
+    {
+        uri.clear();
+        options.clear();
+        username.clear();
+        password.clear();
+        bufferTime = 0;
+        useAudio = false;
+        pauseMode = false;
+        isLocalFile = false;
+        isRTSP = false;
+        isFTP = false;
+        isUDP = false;
+        noStreamingUriAvailable = false;
+        lowLatency = false;
+    }
+    QString uri;
+    QString options;
+    QString username;
+    QString password;
+    int bufferTime;
+    bool useAudio;
+    bool pauseMode;
+    bool isLocalFile;
+    bool isRTSP;
+    bool isFTP;
+    bool isUDP;
+    bool noStreamingUriAvailable;
+    bool lowLatency;
+};
+
 class Player : public QGst::Ui::VideoWidget
 {
     Q_OBJECT
@@ -36,6 +83,8 @@ public:
     QTime position() const;
     void setPosition(const QTime & pos);
     int volume() const;
+
+    void setSource(const SourceSettings & source);
 
     QTime length() const;
     QGst::State state() const;
@@ -51,6 +100,7 @@ Q_SIGNALS:
     void stateChanged();
 
 private:
+    void setPipeline(const QGst::PipelinePtr & pipeline);
     void onBusMessage(const QGst::MessagePtr & message);
     void handlePipelineStateChange(const QGst::StateChangedMessagePtr & scm);
 

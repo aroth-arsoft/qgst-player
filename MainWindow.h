@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QTimer>
+#include "player.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -34,11 +35,12 @@ protected:
     void onStateChanged();
     void onPositionChanged();
 
-    void openUrl(const QString & s);
+private:
+    void restartPlayer();
 
 private:
     Ui::MainWindow *ui;
     QTimer m_fullScreenTimer;
-    QString m_currentUrl;
+    SourceSettings m_currentSource;
 };
 #endif // MAINWINDOW_H
